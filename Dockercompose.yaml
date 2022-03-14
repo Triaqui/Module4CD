@@ -1,0 +1,148 @@
+Multi-stage dockerfile:
+=======================
+- One of the most challenging things about building images is keeping the image size down.
+- With multi-stage builds, you use multiple FROM statements in your Dockerfile. 
+- Each FROM instruction can use a different base, and each of them begins a new stage of the build. 
+- You can selectively copy artifacts from one stage to another, leaving behind everything you don’t want in the final image
+
+Why do we need multi stage dockerfile for prod images:
+  When we containerise our application for a production environment,we need to ensure that our docker images are clean
+  1. Doesn’t have unnecessary packages. Unused packages increase complexity and the attack surface for vulnerabilities in production.
+  2.Is lean. Smaller images are more performant.
+
+dockerfile1 for typescriptapp:
+FROM node:8-alpine
+WORKDIR app
+COPY . .
+RUN npm install
+RUN npm run clean
+RUN npm run build
+CMD npm start
+
+step1: clone the repository below
+git clone 
+
+step2: move the initial dockerfile to a different location
+$ sudo vi Dockerfile and add the above dockerfile instructions
+
+step3: Build an etech-typescriptapp image
+$ docker build -t etech-typescriptapp .
+$ docker images | grep etech-typescriptapp # verify the size of the image it should be above 100MB
+
+step4: Bring the original Dockerfile from the cloned repo into your workspace and replace
+$ docker build -t etechmulti-stage .
+$ docker images | grep etechmulti-stage # verify the size of the final production image 
+
+Note: - You can use AS <stagename> to name your stages within a dockerfile 
+      - you can use --from to read artifacts from one stage into another stage to minimize final image size
+      - production images should be small as possible to reduce expose surface are of attack or risks of vulnerabilities 
+
+Final multi-stage dockerfile:
+# Our first stage, that is the Builder
+FROM node:8-alpine AS etech-sample-builder
+WORKDIR /app
+COPY . .
+RUN npm install
+RUN npm run clean
+RUN npm run build
+# Our Second stage, that creates an image for production
+FROM node:8-alpine AS etech-sample-prod
+WORKDIR /app
+COPY --from=etech-sample-builder ./app/dist ./dist
+COPY package* ./
+RUN npm install --production
+CMD npm start
+
+Dockerfile best practices:
+1. Understand build context:
+ - When you issue a "docker build" command, the current working directory is called the build context
+ - contents of files and directories in the current directory are sent to the Docker daemon as the build context.
+ - so as a summary, always ensure you have a clean build context.
+2. Exclude with .dockerignore:
+ - To exclude files not relevant to the build (without restructuring your source repository) use a .dockerignore file
+3. Use multi-stage builds:
+ - Multi-stage builds allow you to drastically reduce the size of your final image, without struggling to reduce the number of intermediate layers and files.
+ - Because an image is built during the final stage of the build process, you can minimize image layers by leveraging build cache.
+4. Don’t install unnecessary packages
+5. Decouple applications:
+ - Each container should have only one concern. Decoupling applications into multiple containers makes it easier to scale horizontally and reuse containers.
+6. Minimize the number of layers:
+ - Only the instructions RUN, COPY, ADD create layers. 
+ - Other instructions create temporary intermediate images, and do not increase the size of the build.
+7. Sort multi-line arguments:
+8. Leverage build cache:
+
+Docker-compose:
+- Use to build multi containers application on one yaml definition file 
+- docker-compose include following top-level root properties
+version --> version of the file format use
+service --> defines the different containers to host the application
+volume --> defines the storage of data generated from the app
+network --> defines the networking betwen services
+
+Docker-compose mini-project:
+script to install docker-compose binaries
+#!/bin/bash
+#Author: Elvis N
+#Company: Etech Consulting Sotfware solutions
+echo "welcome to Etech Consulting wordpress + mysql App project"
+echo "docker-compose binaries install starting!!!!"
+sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" \
+ -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+docker-compose --version
+
+wordpress/mysql database setups:
+  step1: create a project directory
+  $ sudo mkdir <projectname>
+
+  step2: create a yaml docker-compose file
+  $ sudo vi docker-compose.yaml
+  add the below content:
+version: "3.9"
+    
+services:
+  db:
+    image: mysql:5.7
+    volumes:
+      - db_data:/var/lib/mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: etechd201
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
+    
+  wordpress:
+    depends_on:     # making this stage a dependency on db stage
+      - db
+    image: wordpress:latest
+    volumes:
+      - wordpress_data:/var/www/html
+    ports:
+      - "8000:80"
+    restart: always
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+volumes:
+  db_data: {}
+  wordpress_data: {}
+
+  step3: run the docker-compose yaml file
+  $ docker-compose config # to verify syntax
+  $ docker-compose up -d  #to deploy the web application
+  step4: bring the web application down
+  $ docker-compose down
+  step5: access the mysql database to verify the content
+   $ docker exec -it <container-id> mysql -u wordpress -p <enter password from env>
+
+ Mount container volume to aws ebs:
+  $ docker plugin install rexray/ebs # remember you already run aws configure to query aws API'S
+
+
+
+  
