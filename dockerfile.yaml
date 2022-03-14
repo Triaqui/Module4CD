@@ -1,0 +1,216 @@
+Thursday,03-10:
+Dockerfile:
+===========
+What is a Dockerfile?
+Ans: A Dockerfile is a text file that contains instructions and Arguments use by docker deamon to build 
+a docker image
+
+Syntax structure of Dockerfile:
+===============================
+# Dockerfile contents
+<INSTRUCTION> <Arguments>
+
+INSTRUCTION: Represent instructions for the docker deamon to carry out a specific build function
+Arguments: Task to be done from the instructions
+
+Dockerfile compositions:
+  #SAMPLE Dockerfile1
+FROM alpine:3.4
+RUN apk update
+RUN apk add vim
+RUN apk add curl
+
+#sample dockerfile2 edited
+FROM alpine:3.4
+RUN apk update
+RUN apk add vim
+RUN apk add git
+
+note: - docker build executes the lines in the Dockerfile one at a time.
+      - Only RUN, COPY and ADD instructions create layers to improve build performance.
+      - Keep in mind that only RUN, COPY and ADD instructions create layers
+      - The directory where you issue the docker build command is called the build context
+
+If you look at the above screen shot again you can notice that docker build provided the build 
+output in 4 steps, namely Step 1/4, Step 2/4, Step 3/4 and Step 4/4.
+
+Sample INSTRUCTIONs:
+  FROM --> start point of every Dockerfile and specify the base image
+  MENTAINER --> Author or developer who administered the dockerfile
+  ENV --> use to define environmental variables 
+  VOLUME --> use to define the container volume
+  USER --> use when root is too mainstream[use regular user to run images if possible]
+  ONBUILD --> give more flexibility to your team and clients
+  RUN --> let’s run commands
+  COPY --> use to copy files or code into the image during creation time
+  ADD --> same as COPY but not often recommended
+  WORKDIR --> set the working directory
+  EXPOSE --> use to expose your container application
+  CMD -->  is the instruction to specify what component is to be run by your image with arguments in 
+  the following form: CMD [“executable”, “param1”, “param2”…].
+  ENTRYPOINT -->  You use ENTRYPOINT as the main executable of your image
+
+  Tips: The main advantage of image layering lies in image caching.
+
+Both ADD and COPY are designed to add directories and files to your Docker image in the form of 
+ADD <src>... <dest> or COPY <src>... <dest>
+
+what is a dangling image in docker?
+ans: Images within our working directory or system that has no effect on the running application
+How to see dangling images?
+- docker images --filter "dangling=true"
+=================================================================================================
+etech_nodejsApp: docker project1
+================================
+step1: Build the etech_nodejsApp container image
+--> clone the git repository given to you from etech DL 
+ $ git clone https://github.com/etechDevops/etech_nodejsApp
+
+step2: create a Dockerfile in the /app directory and paste the content below
+#Etech Consulting software solutions
+FROM node:12-alpine
+RUN apk add --no-cache python2 g++ make
+WORKDIR /app
+COPY . .
+RUN yarn install --production
+CMD ["node", "src/index.js"]
+EXPOSE 3000
+step3: Build the etechapp image from the Dockerfile within /app directory
+$ docker build -t etechapp:1 . #remember the (dot) to point to dockerfile location
+
+step4: Run the etech_nodjsApp container using etechapp image
+$ docker run --name etech_nodjsApp -dp 3000:3000 etechapp:1
+
+step5: Access the initial application from web browser
+$  http://publi_ip:3000
+add some iterms like mango, orange, apple, books, bible etc..(it should be saved if done correctly)
+step6: Update source code
+ -                <p className="text-center">No items yet! Add one above!</p>
+ +                <p className="text-center">Your etech cart is empty! Add one above!</p>
+ - means you are changing that line
+ + means you are adding 
+step7: Rebuild etechapp image
+$ docker build -t etechapp:latest .
+
+step8: rerun another container with new image
+ $ docker run --name etech_nodjsApp1 -dp 3001:3000 etechapp:latest
+
+step9: Backup etechapp image to aws ECR Private registry
+$ sudo apt install awscli
+$ aws configure and enter your < secret-key and access-key>
+$ aws iam list-users <enter. to verify you can reach aws API's
+$ aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin 873737910747.dkr.ecr.us-east-1.amazonaws.com
+$ docker tag etechapp:latest dev/etechapp-ecr:latest
+$ docker tag dev/etechapp-ecr:latest 873737910747.dkr.ecr.us-east-1.amazonaws.com/dev/etechapp-ecr:latest
+$ docker push 873737910747.dkr.ecr.us-east-1.amazonaws.com/dev/etechapp-ecr:latest
+
+step10: stop and rm all the initial containers for persistent volume analysis
+$ docker ps <to see your running containers>
+$ docker stop <container_ids>
+$ docker rm <container_ids>
+
+step11: create persistent volume under docker daemon control
+$ docker volume create etechapp-db
+
+step12: rerun the container while mounting the persistent volume
+$ docker run --name etech_nodjsApp -dp 3002:3000 -v etechapp-db:/etc/todos etechapp:latest
+access your app again on the browser at port 3002 
+$ docker rm -rf <container_ids>
+$ docker run --name etech_nodjsApp -dp 3002:3000 -v etechapp-db:/etc/todos etechapp:latest
+check that your items are still persisted
+$ docker volume inspect etechapp-db --> to see the volume mountpoint
+
+step13: stop all running containers and remove them as before in step12
+step14: lets build a stateful application now
+
+$ docker run --name etechapp-dev -dp 3000:3000 -w /app -v "$(pwd):/app" node:12-alpine sh -c "yarn install && yarn run dev"
+$ docker logs -f <container-id> to analyse the container logs for events
+
+step15: Start a MYSQL database container
+$ docker network create etechapp-net
+$ docker run --name etechappdb -d \
+     --network etechapp-net --network-alias mysql \
+     -v todo-mysql-data:/var/lib/mysql \
+     -e MYSQL_ROOT_PASSWORD=secret \
+     -e MYSQL_DATABASE=todos \
+     mysql:5.7
+
+$ docker exec -it <mysql-container-id> mysql -u root -p
+mysql> SHOW DATABASES; make sure you see a todos database
+
+step16: Connect to MYSQL database via bridge network 
+
+$ docker run -it --network etechapp-net nicolaka/netshoot
+$ dig mysql  --. check for any A record to resolved mysql to ip 
+
+step16: run the app with MYSQL 
+$ docker run --name etech_nodjsApp -dp 3000:3000 \
+   -w /app -v "$(pwd):/app" \
+   --network etechapp-net \
+   -e MYSQL_HOST=mysql \
+   -e MYSQL_USER=root \
+   -e MYSQL_PASSWORD=secret \
+   -e MYSQL_DB=todos \
+   node:12-alpine \
+   sh -c "yarn install && yarn run dev"
+
+step17: connect to the mysql database
+$ docker exec -it <mysql-container-id> mysql -u root -p todos
+mysql> select * from todo_items; --> YOU SHOULD SEE THE TABLE with items from your app
+
+----------------------------------End of DOCKER PROJECT1--------------------------------------
+Demo to diff between CMD and ENTRYPOINT
+lets an ubuntu docker container at runtime
+
+command: $ docker run ubuntu # will run an instance of the ubuntu image and exit
+
+Dockerfile1:
+  FROM Ubuntu
+
+  CMD["sleep","30"]
+
+  $ docker build -t etechdemo .
+  $ docker run etechdemo
+  $ docker run etchdemo sleep 60 # to test that it overwrite initial sleep 30
+
+Dockerfile2:
+  FROM Ubuntu
+
+  ENTRYPOINT["sleep"]
+
+  $ docker build -t etechentry .
+  $ docker run etechentry 30
+  $ docker run etechentry  # it gives you error missing operand for sleep command
+  $ docker run etechentry sleep 60 # gives you error
+  
+
+Dockerfile3:
+  FROM Ubuntu
+
+  ENTRYPOINT["sleep"]
+
+  CMD["30"]
+ 
+  $ docker build -t etechepcmd .
+  $ docker run  etechepcmd
+
+Multistage Dockerfile:
+======================
+Definition: use to perform multiple docker builds operations to minimize resource usage
+
+multi stage Dockerfile:
+FROM golang:1.16
+WORKDIR /go/src/github.com/alexellis/href-counter/
+RUN go get -d -v golang.org/x/net/html  
+COPY app.go ./
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o app .
+
+FROM alpine:latest  
+RUN apk --no-cache add ca-certificates
+WORKDIR /root/
+COPY --from=0 /go/src/github.com/alexellis/href-counter/app ./
+CMD ["./app"]  
+
+
+
